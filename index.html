@@ -94,6 +94,13 @@
     font-size: 15px; line-height: 1;
     border-radius: 10px;
   }
+  #signout-btn {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 12px;
+    border-radius: 10px;
+    color: var(--text-muted);
+  }
   #messages {
     height: 400px;
     overflow-y: auto;
@@ -143,6 +150,7 @@
       <div class="header-left">
         <span id="whoami"></span>
         <button id="theme-toggle" aria-label="Toggle dark mode">◐</button>
+        <button id="signout-btn" aria-label="Sign out">Sign out</button>
       </div>
     </div>
     <div id="messages"></div>
@@ -186,6 +194,7 @@
   const whoami = document.getElementById('whoami');
   const err = document.getElementById('err');
   const themeToggle = document.getElementById('theme-toggle');
+  const signoutBtn = document.getElementById('signout-btn');
 
   // --- Theme ---
   function applyTheme(theme) {
@@ -239,6 +248,9 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  let messageListenerQuery = null;
+  let messageListenerFn = null;
+
   function enterChat(name) {
     myName = name;
     localStorage.setItem('classroom-chat-name', name);
@@ -246,10 +258,28 @@
     chatScreen.style.display = 'block';
     whoami.textContent = 'You: ' + name;
 
-    messagesRef.limitToLast(100).on('child_added', function(snapshot) {
+    messageListenerQuery = messagesRef.limitToLast(100);
+    messageListenerFn = function(snapshot) {
       const m = snapshot.val();
       if (m && m.name && m.text) renderMessage(m.name, m.text, m.ts);
-    });
+    };
+    messageListenerQuery.on('child_added', messageListenerFn);
+  }
+
+  function signOut() {
+    if (messageListenerQuery && messageListenerFn) {
+      messageListenerQuery.off('child_added', messageListenerFn);
+      messageListenerQuery = null;
+      messageListenerFn = null;
+    }
+    localStorage.removeItem('classroom-chat-name');
+    myName = null;
+    messagesEl.innerHTML = '';
+    nameInput.value = '';
+    clearError();
+    chatScreen.style.display = 'none';
+    loginScreen.style.display = 'block';
+    nameInput.focus();
   }
 
   function join() {
@@ -280,6 +310,7 @@
     msgInput.focus();
   }
 
+  signoutBtn.addEventListener('click', signOut);
   joinBtn.addEventListener('click', join);
   nameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') join(); });
   sendBtn.addEventListener('click', send);
