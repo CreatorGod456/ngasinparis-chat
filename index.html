@@ -94,12 +94,23 @@
     font-size: 15px; line-height: 1;
     border-radius: 10px;
   }
-  #signout-btn {
+  #signout-btn, #editprofile-btn {
     height: 36px;
     padding: 0 12px;
     font-size: 12px;
     border-radius: 10px;
     color: var(--text-muted);
+  }
+  .avatar-preview-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .avatar-preview {
+    width: 44px; height: 44px; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--border);
+    background: var(--bg); flex-shrink: 0;
+  }
+  .avatar-msg {
+    width: 32px; height: 32px; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--border);
+    background: var(--bg); flex-shrink: 0;
   }
   #messages {
     height: 400px;
@@ -126,8 +137,28 @@
   }
   .msg-mine .msg-bubble { background: var(--bubble-mine); }
   .msg-mine .msg-name { text-align: right; }
-  .msg-row { display: flex; flex-direction: column; }
-  .msg-row.msg-mine { align-items: flex-end; }
+  .msg-row { display: flex; align-items: flex-end; gap: 8px; }
+  .msg-row.msg-mine { flex-direction: row-reverse; }
+  .msg-content { display: flex; flex-direction: column; }
+  .msg-row.msg-mine .msg-content { align-items: flex-end; }
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    align-items: center; justify-content: center;
+    z-index: 10;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
+  .modal-actions button { flex: 1; }
   .input-row { display: flex; gap: 8px; margin-top: 10px; }
   .input-row input { flex: 1; margin-bottom: 0; }
   #err { font-size: 12px; color: var(--danger); margin-top: 6px; display: none; }
@@ -139,6 +170,10 @@
     <div id="login-card">
       <h2>Join the chatroom</h2>
       <p class="sub">Pick a name your classmates will recognize.</p>
+      <div class="avatar-preview-row">
+        <img id="avatar-preview" class="avatar-preview" alt="Avatar preview" />
+        <input id="avatar-input" type="text" placeholder="Profile picture link (optional)" maxlength="300" style="margin-bottom:0;" />
+      </div>
       <input id="name-input" type="text" placeholder="Your name" maxlength="20" />
       <button id="join-btn">Join chat</button>
     </div>
@@ -150,6 +185,7 @@
       <div class="header-left">
         <span id="whoami"></span>
         <button id="theme-toggle" aria-label="Toggle dark mode">◐</button>
+        <button id="editprofile-btn" aria-label="Edit profile">Edit profile</button>
         <button id="signout-btn" aria-label="Sign out">Sign out</button>
       </div>
     </div>
@@ -159,6 +195,22 @@
       <button id="send-btn">Send</button>
     </div>
     <p id="err"></p>
+  </div>
+</div>
+
+<div id="edit-modal" class="modal-overlay">
+  <div class="modal-card">
+    <h2>Edit profile</h2>
+    <p class="sub">Update your name or profile picture.</p>
+    <div class="avatar-preview-row">
+      <img id="edit-avatar-preview" class="avatar-preview" alt="Avatar preview" />
+      <input id="edit-avatar-input" type="text" placeholder="Profile picture link (optional)" maxlength="300" style="margin-bottom:0;" />
+    </div>
+    <input id="edit-name-input" type="text" placeholder="Your name" maxlength="20" />
+    <div class="modal-actions">
+      <button id="edit-cancel-btn">Cancel</button>
+      <button id="edit-save-btn" style="background:var(--accent);color:var(--accent-text);border:none;">Save</button>
+    </div>
   </div>
 </div>
 
@@ -195,6 +247,35 @@
   const err = document.getElementById('err');
   const themeToggle = document.getElementById('theme-toggle');
   const signoutBtn = document.getElementById('signout-btn');
+  const avatarInput = document.getElementById('avatar-input');
+  const avatarPreview = document.getElementById('avatar-preview');
+  const editProfileBtn = document.getElementById('editprofile-btn');
+  const editModal = document.getElementById('edit-modal');
+  const editNameInput = document.getElementById('edit-name-input');
+  const editAvatarInput = document.getElementById('edit-avatar-input');
+  const editAvatarPreview = document.getElementById('edit-avatar-preview');
+  const editCancelBtn = document.getElementById('edit-cancel-btn');
+  const editSaveBtn = document.getElementById('edit-save-btn');
+
+  let myAvatar = null;
+
+  function fallbackAvatar(name) {
+    const n = (name || '?').trim() || '?';
+    return 'https://ui-avatars.com/api/?name=' + encodeURIComponent(n) + '&background=random&color=fff&size=128';
+  }
+  function resolveAvatar(name, customUrl) {
+    const u = (customUrl || '').trim();
+    return u ? u : fallbackAvatar(name);
+  }
+  function wireLiveAvatarPreview(nameEl, urlEl, imgEl) {
+    function update() { imgEl.src = resolveAvatar(nameEl.value, urlEl.value); }
+    nameEl.addEventListener('input', update);
+    urlEl.addEventListener('input', update);
+    imgEl.onerror = function() { imgEl.src = fallbackAvatar(nameEl.value); };
+    update();
+  }
+  wireLiveAvatarPreview(nameInput, avatarInput, avatarPreview);
+  wireLiveAvatarPreview(editNameInput, editAvatarInput, editAvatarPreview);
 
   // --- Theme ---
   function applyTheme(theme) {
@@ -237,13 +318,17 @@
     return h + ':' + m + ' ' + ampm;
   }
 
-  function renderMessage(name, text, ts) {
+  function renderMessage(name, text, ts, avatarUrl) {
     const isMe = name === myName;
     const row = document.createElement('div');
     row.className = 'msg-row' + (isMe ? ' msg-mine' : '');
+    const safeAvatar = avatarUrl || fallbackAvatar(name);
     row.innerHTML =
+      '<img class="avatar-msg" src="' + escapeHtml(safeAvatar) + '" alt="" onerror="this.onerror=null;this.src=\'' + fallbackAvatar(name).replace(/'/g, "\\'") + '\';" />' +
+      '<div class="msg-content">' +
       '<div class="msg-name">' + escapeHtml(name) + '<span class="msg-time">' + formatTime(ts) + '</span></div>' +
-      '<div class="msg-bubble">' + escapeHtml(text) + '</div>';
+      '<div class="msg-bubble">' + escapeHtml(text) + '</div>' +
+      '</div>';
     messagesEl.appendChild(row);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -251,19 +336,23 @@
   let messageListenerQuery = null;
   let messageListenerFn = null;
 
-  function enterChat(name) {
+  function enterChat(name, avatarUrl) {
     myName = name;
+    myAvatar = resolveAvatar(name, avatarUrl);
     localStorage.setItem('classroom-chat-name', name);
+    localStorage.setItem('classroom-chat-avatar', avatarUrl || '');
     loginScreen.style.display = 'none';
     chatScreen.style.display = 'block';
     whoami.textContent = 'You: ' + name;
 
-    messageListenerQuery = messagesRef.limitToLast(100);
-    messageListenerFn = function(snapshot) {
-      const m = snapshot.val();
-      if (m && m.name && m.text) renderMessage(m.name, m.text, m.ts);
-    };
-    messageListenerQuery.on('child_added', messageListenerFn);
+    if (!messageListenerQuery) {
+      messageListenerQuery = messagesRef.limitToLast(100);
+      messageListenerFn = function(snapshot) {
+        const m = snapshot.val();
+        if (m && m.name && m.text) renderMessage(m.name, m.text, m.ts, m.avatar);
+      };
+      messageListenerQuery.on('child_added', messageListenerFn);
+    }
   }
 
   function signOut() {
@@ -273,9 +362,13 @@
       messageListenerFn = null;
     }
     localStorage.removeItem('classroom-chat-name');
+    localStorage.removeItem('classroom-chat-avatar');
     myName = null;
+    myAvatar = null;
     messagesEl.innerHTML = '';
     nameInput.value = '';
+    avatarInput.value = '';
+    avatarPreview.src = fallbackAvatar('');
     clearError();
     chatScreen.style.display = 'none';
     loginScreen.style.display = 'block';
@@ -289,7 +382,7 @@
       return;
     }
     clearError();
-    enterChat(name);
+    enterChat(name, avatarInput.value);
   }
 
   function send() {
@@ -302,13 +395,35 @@
     messagesRef.push({
       name: myName,
       text: text,
-      ts: Date.now()
+      ts: Date.now(),
+      avatar: myAvatar
     }).catch(function() {
       showError('Could not send message. Check your connection and try again.');
     });
     msgInput.value = '';
     msgInput.focus();
   }
+
+  function openEditProfile() {
+    editNameInput.value = myName || '';
+    editAvatarInput.value = localStorage.getItem('classroom-chat-avatar') || '';
+    editAvatarPreview.src = resolveAvatar(editNameInput.value, editAvatarInput.value);
+    editModal.classList.add('open');
+  }
+  function closeEditProfile() {
+    editModal.classList.remove('open');
+  }
+  function saveEditProfile() {
+    const name = editNameInput.value.trim();
+    if (!name) return;
+    enterChat(name, editAvatarInput.value);
+    closeEditProfile();
+  }
+
+  editProfileBtn.addEventListener('click', openEditProfile);
+  editCancelBtn.addEventListener('click', closeEditProfile);
+  editSaveBtn.addEventListener('click', saveEditProfile);
+  editModal.addEventListener('click', function(e) { if (e.target === editModal) closeEditProfile(); });
 
   signoutBtn.addEventListener('click', signOut);
   joinBtn.addEventListener('click', join);
@@ -320,7 +435,7 @@
   const savedName = localStorage.getItem('classroom-chat-name');
   if (savedName) {
     nameInput.value = savedName;
-    enterChat(savedName);
+    enterChat(savedName, localStorage.getItem('classroom-chat-avatar') || '');
   }
 
   // Reveal body only after everything above has run, to avoid a flash of
